@@ -1,0 +1,97 @@
+# This model is a reproduction of the algorithm submitted in the Calgary-Campinas Multi-channel MR Reconstruction (MC-MRRec) Challenge
+# and is among the top-two solutions.
+
+physics:
+    forward_operator: fft2(centered=False)
+    backward_operator: ifft2(centered=False)
+training:
+    datasets:
+        # Two datasets, only difference is the shape, so the data can be collated for larger batches. R=5
+        -   name: BrainCancer
+            lists:
+                - ../lists/train/2x512x512_train.lst
+            transforms:
+                crop: null
+                estimate_sensitivity_maps: true  # Estimate the sensitivity map on the ACS
+                scaling_key: masked_kspace  # Compute the image normalization based on the masked_kspace maximum
+                image_center_crop: false
+                masking:
+                    name: BrainCancer
+                    accelerations: [10]
+            crop_outer_slices: true
+    batch_size: 2  # This is the batch size per GPU!
+    optimizer: Adam
+    lr: 0.0005
+    weight_decay: 0.0
+    lr_step_size: 1000
+    lr_gamma: 0.2
+    lr_warmup_iter: 1000
+    num_iterations: 10000
+    gradient_steps: 1
+    gradient_clipping: 0.0
+    gradient_debug: false
+    checkpointer:
+        checkpoint_steps: 500
+    validation_steps: 500
+    loss:
+        crop: null
+        losses:
+            -   function: l1_loss
+                multiplier: 1.0
+            -   function: ssim_loss
+                multiplier: 1.0
+validation:
+    datasets:
+        # 
+        -   name: BrainCancer
+            lists: 
+                - ../lists/val/2x512x512_val.lst
+            transforms:
+                crop: null
+                estimate_sensitivity_maps: true
+                scaling_key: masked_kspace
+                masking:
+                    name: BrainCancer
+                    accelerations: [10]
+            crop_outer_slices: true
+            text_description: 10x  # Description for logging
+    crop: null  # This sets the cropping for the DoIterationOutput
+    metrics:
+        - calgary_campinas_ssim
+
+
+model:
+    model_name: recurrentvarnet.recurrentvarnet.RecurrentVarNet
+    num_steps: 12
+    recurrent_hidden_channels: 21
+    recurrent_num_layers: 3
+    initializer_initialization: sense
+    learned_initializer: true
+    initializer_channels: [16, 16, 32, 32]
+    initializer_dilations: [1, 1, 2, 4]
+    initializer_multiscale: 3
+additional_models:
+    sensitivity_model:
+        model_name: unet.unet_2d.UnetModel2d
+        in_channels: 2
+        out_channels: 2
+        num_filters: 8
+        num_pool_layers: 4
+        dropout_probability: 0.0
+logging:
+    tensorboard:
+        num_images: 4
+inference:
+    batch_size: 8
+    dataset:
+        name: BrainCancer
+        crop_outer_slices: False
+        text_description: inference
+        transforms: 
+            crop: null
+            estimate_sensitivity_maps: true
+            scaling_key: masked_kspace
+            masking: 
+                name: BrainCancer
+                accelerations: [10]
+                        
